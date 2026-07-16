@@ -114,6 +114,11 @@ jobs:
             deployment/ebs-csi-controller \
             -n kube-system \
             --timeout=10m
+    
+      - name: Apply ALB Controller ServiceAccount
+        run: |
+            kubectl apply \
+            -f ../../modules/alb-controller/alb-controller-serviceaccount.yaml
 
       - name: Install AWS Load Balancer Controller
         run: |
