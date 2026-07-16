@@ -136,12 +136,12 @@ jobs:
             --wait \
             --timeout 10m
 
-            - name: Wait for AWS Load Balancer Controller
-                run: |
-                    kubectl rollout status \
-                    deployment/aws-load-balancer-controller \
-                    -n kube-system \
-                    --timeout=10m
+      - name: Wait for AWS Load Balancer Controller
+        run: |
+            kubectl rollout status \
+            deployment/aws-load-balancer-controller \
+            -n kube-system \
+            --timeout=10m
 
       - name: Verify Cluster Components
         run: |
