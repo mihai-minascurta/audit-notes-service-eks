@@ -39,7 +39,7 @@ jobs:
                 const token = await core.getIDToken('sts.amazonaws.com');
                 const payload = token.split('.')[1];
                 const decoded = JSON.parse(Buffer.from(payload, 'base64').toString());
-                onsole.log(JSON.stringify(decoded, null, 2));
+                console.log(JSON.stringify(decoded, null, 2));
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
