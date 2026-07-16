@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: main-configmap
+  namespace: {{ .Values.namespace }}
+data:
+  APP_MODE: "{{ .Values.configMap.appMode }}"
+  MESSAGE: "{{ .Values.configMap.message }}"
+  DATA_PATH: "{{ .Values.configMap.dataPath }}"

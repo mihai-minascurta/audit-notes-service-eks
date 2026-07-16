@@ -1,0 +1,62 @@
+namespace: audit
+
+app:
+  name: audit-nodes
+  serviceAccount: main-serviceaccount
+  role: main-role
+  roleBinding: main-biding
+
+configMap:
+  appMode: "dev"
+  message: "Hi from configmap"
+  dataPath: "/data/defaultnote.txt"
+
+secret:
+  apiToken: YXVkaXQtc3VwZXItc2VjcmV0LXRva2VuLTIwMjQ=
+
+image:
+  repository: ghcr.io/mihai-minascurta/audit-notes-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+containerPort: 5555
+
+service:
+  port: 5050
+  targetPort: 5555
+
+pvc:
+  storage: 1Gi
+  storageclassname: ebs-gp3
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"
+
+probes:
+  readinessDelay: 5
+  readinessPeriod: 10
+  livenessDelay: 15
+  livenessPeriod: 20
+
+
+job:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+
+cronJob:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+ingress:
+  enabled: true
+  className: alb
+  scheme: internet-facing
+  targetType: ip 

@@ -1,0 +1,77 @@
+name: Destroy Infrastructure
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-central-1
+  K8S_NAMESPACE: audit
+  RELEASE_NAME: audit-notes-service
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform/environments/dev init
+
+      - name: Terraform Validate
+        run: terraform -chdir=terraform/environments/dev validate
+
+      - name: Get Terraform Outputs
+        id: terraform
+        run: |
+          cd terraform/environments/dev
+          echo "cluster_name=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ steps.terraform.outputs.cluster_name }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Uninstall Application
+        run: |
+            helm uninstall ${{ env.RELEASE_NAME }} \
+            -n ${{ env.K8S_NAMESPACE }}
+
+      - name: Wait for Ingress deletion
+        run: |
+            kubectl wait \
+            --for=delete ingress \
+            --all \
+            -n ${{ env.K8S_NAMESPACE }} \
+            --timeout=10m
+
+      - name: Uninstall AWS Load Balancer Controller
+        run: |
+            helm uninstall aws-load-balancer-controller \
+            -n kube-system
+
+      - name: Uninstall EBS CSI Driver
+        run: |
+            helm uninstall aws-ebs-csi-driver \
+            -n kube-system
+
+      - name: Terraform Destroy
+        run: |
+            terraform -chdir=terraform/environments/dev destroy \
+            -auto-approve

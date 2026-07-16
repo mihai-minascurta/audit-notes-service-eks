@@ -1,0 +1,135 @@
+name: Infrastructure Creator
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-central-1
+
+jobs:
+  infrastructure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        working-directory: terraform/environments/dev
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+    
+      - name: Verify AWS Identity
+        run: aws sts get-caller-identity > /dev/null
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+
+      - name: Get Terraform Outputs
+        id: terraform
+        run: |
+            echo "cluster_name=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
+            echo "vpc_id=$(terraform output -raw vpc_id)" >> $GITHUB_OUTPUT
+
+      - name: Verify kubectl
+        run: kubectl version --client
+
+      - name: Configure kubectl #Say to kubectl to work with this cluster
+        run: |
+            aws eks update-kubeconfig \
+            --name ${{ steps.terraform.outputs.cluster_name }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for EKS Nodes
+        run: |
+            kubectl wait \
+            --for=condition=Ready nodes \
+            --all \
+            --timeout=20m
+
+      - name: Verify Cluster
+        run: |
+            kubectl get nodes
+
+      - name: Apply EBS CSI ServiceAccount #EBS CSI cannot be installed without ServiceAccount
+        run: |
+            kubectl apply \
+            -f ../../modules/ebs-csi/ebs-csi-serviceaccount.yaml
+
+      - name: Verify Helm
+        run: helm version
+
+      - name: Install EBS CSI Driver
+        run: |
+            helm repo add aws-ebs-csi-driver https://kubernetes-sigs.github.io/aws-ebs-csi-driver
+            helm repo update
+
+            helm upgrade --install aws-ebs-csi-driver \
+            aws-ebs-csi-driver/aws-ebs-csi-driver \
+            --namespace kube-system \
+            --set serviceAccount.create=false \
+            --set serviceAccount.name=ebs-csi-controller-sa
+            --wait \
+            --timeout 10m
+
+      - name: Wait for EBS CSI Driver
+        run: |
+            kubectl rollout status \
+            deployment/ebs-csi-controller \
+            -n kube-system \
+            --timeout=10m
+
+      - name: Apply ALB Controller ServiceAccount
+        run: |
+            kubectl apply \
+            -f ../../modules/alb-controller/alb-controller-serviceaccount.yaml
+
+      - name: Install AWS Load Balancer Controller
+        run: |
+            helm repo add eks https://aws.github.io/eks-charts
+            helm repo update
+
+            helm upgrade --install aws-load-balancer-controller \
+            eks/aws-load-balancer-controller \
+            -n kube-system \
+            --set clusterName=${{ steps.terraform.outputs.cluster_name }} \
+            --set serviceAccount.create=false \
+            --set serviceAccount.name=aws-load-balancer-controller \
+            --set region=${{ env.AWS_REGION }} \
+            --set vpcId=${{ steps.terraform.outputs.vpc_id }}
+            --wait \
+            --timeout 10m
+
+      - name: Wait for AWS Load Balancer Controller
+        run: |
+            kubectl rollout status \
+            deployment/aws-load-balancer-controller \
+            -n kube-system \
+            --timeout=10m
+
+      - name: Verify Cluster Components
+        run: |
+            kubectl get nodes
+            kubectl get pods -n kube-system
+            kubectl get storageclass
+            kubectl get ingressclass

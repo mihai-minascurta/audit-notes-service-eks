@@ -1,0 +1,70 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: main-cronjob
+  namespace: {{ .Values.namespace }}
+spec:
+  schedule: "{{ .Values.cronJob.schedule }}"
+  concurrencyPolicy: {{ .Values.cronJob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.cronJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cronJob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: note-checker
+              image: busybox:1.36.1
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  NOTE_PATH="{{ .Values.configMap.dataPath }}"
+                  REPORT_DIR="/data/reports"
+                  TIMESTAMP=$(date '+%Y-%m-%dT%H:%M:%S')
+                  REPORT_FILE="${REPORT_DIR}/report_$(date '+%Y%m%d_%H%M%S').txt"
+
+                  mkdir -p "$REPORT_DIR"
+
+                  if [ -f "$NOTE_PATH" ]; then
+                    STATUS="EXISTS"
+                    SIZE=$(wc -c < "$NOTE_PATH")
+                    LINES=$(wc -l < "$NOTE_PATH")
+                    LAST_MODIFIED=$(stat -c '%y' "$NOTE_PATH" 2>/dev/null || echo "N/A")
+
+                    {
+                      echo "===== RAPORT VERIFICARE NOTITA ====="
+                      echo "Timestamp:        $TIMESTAMP"
+                      echo "Status:           $STATUS"
+                      echo "Cale fisier:      $NOTE_PATH"
+                      echo "Dimensiune:       ${SIZE} bytes"
+                      echo "Numar linii:      $LINES"
+                      echo "Ultima modificare: $LAST_MODIFIED"
+                      echo "====================================="
+                    } > "$REPORT_FILE"
+
+                    echo "[OK] Notita exista. Raport scris in $REPORT_FILE"
+                  else
+                    STATUS="MISSING"
+
+                    {
+                      echo "===== RAPORT VERIFICARE NOTITA ====="
+                      echo "Timestamp:   $TIMESTAMP"
+                      echo "Status:      $STATUS"
+                      echo "Cale fisier: $NOTE_PATH"
+                      echo "Detalii:     Fisierul nu a fost gasit pe volum."
+                      echo "====================================="
+                    } > "$REPORT_FILE"
+
+                    echo "[WARN] Notita lipseste. Raport scris in $REPORT_FILE"
+                  fi
+
+                  ls -1t "${REPORT_DIR}/report_"*.txt 2>/dev/null | tail -n +61 | xargs -r rm --
+              volumeMounts:
+                - name: data-volume
+                  mountPath: /data
+          volumes:
+            - name: data-volume
+              persistentVolumeClaim:
+                claimName: main-pvc

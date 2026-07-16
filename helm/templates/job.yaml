@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: main-job
+  namespace: {{ .Values.namespace }}
+spec:
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        app: main-job
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: busybox:1.36.1
+          command:
+            - sh
+            - -c
+            - touch {{ .Values.configMap.dataPath }}
+          volumeMounts:
+            - name: data-volume
+              mountPath: /data
+      volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: main-pvc
