@@ -103,8 +103,8 @@ jobs:
             helm upgrade --install aws-ebs-csi-driver \
             aws-ebs-csi-driver/aws-ebs-csi-driver \
             --namespace kube-system \
-            --set serviceAccount.create=false \
-            --set serviceAccount.name=ebs-csi-controller-sa
+            --set controller.serviceAccount.create=false \
+            --set controller.serviceAccount.name=ebs-csi-controller-sa \
             --wait \
             --timeout 10m
 
@@ -114,11 +114,6 @@ jobs:
             deployment/ebs-csi-controller \
             -n kube-system \
             --timeout=10m
-
-      - name: Apply ALB Controller ServiceAccount
-        run: |
-            kubectl apply \
-            -f ../../modules/alb-controller/alb-controller-serviceaccount.yaml
 
       - name: Install AWS Load Balancer Controller
         run: |
@@ -132,16 +127,16 @@ jobs:
             --set serviceAccount.create=false \
             --set serviceAccount.name=aws-load-balancer-controller \
             --set region=${{ env.AWS_REGION }} \
-            --set vpcId=${{ steps.terraform.outputs.vpc_id }}
+            --set vpcId=${{ steps.terraform.outputs.vpc_id }} \
             --wait \
             --timeout 10m
 
-      - name: Wait for AWS Load Balancer Controller
-        run: |
-            kubectl rollout status \
-            deployment/aws-load-balancer-controller \
-            -n kube-system \
-            --timeout=10m
+            - name: Wait for AWS Load Balancer Controller
+                run: |
+                    kubectl rollout status \
+                    deployment/aws-load-balancer-controller \
+                    -n kube-system \
+                    --timeout=10m
 
       - name: Verify Cluster Components
         run: |
